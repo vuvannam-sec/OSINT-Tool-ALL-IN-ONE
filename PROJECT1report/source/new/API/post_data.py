@@ -1,135 +1,102 @@
-import requests
 import json
-import http.client
 from datetime import datetime
-import os
+from pathlib import Path
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
-API_HOST = "facebook-scraper3.p.rapidapi.com"
-BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
+import requests
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
+from _rapidapi import BASE_URL, get_headers
 
-# Hàm chuyển định dạng ngày từ mm/dd/yyyy sang yyyy-mm-dd
+REQUEST_TIMEOUT = 30
+
+
 def convert_date(date_str):
     try:
-        date_obj = datetime.strptime(date_str, "%m/%d/%Y")
-        return date_obj.strftime("%Y-%m-%d")
-    except ValueError:
-        print("Định dạng ngày không hợp lệ! Vui lòng nhập theo định dạng mm/dd/yyyy (ví dụ: 01/15/2023).")
-        return None
+        return datetime.strptime(date_str, "%m/%d/%Y").strftime("%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("Ngày phải có định dạng mm/dd/yyyy") from exc
 
-# Hàm lấy danh sách bài post từ một profile hoặc page
+
 def get_profile_posts(profile_id, start_date=None, end_date=None):
-    url = f"{BASE_URL}/profile/posts"
     params = {"profile_id": profile_id}
     if start_date:
         params["start_date"] = start_date
     if end_date:
         params["end_date"] = end_date
-    response = requests.get(url, headers=headers, params=params)
-    return response
 
-# Hàm lấy comment của một post
+    return requests.get(
+        f"{BASE_URL}/profile/posts",
+        headers=get_headers(),
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+    )
+
+
 def get_comments(post_id):
-    url = f"{BASE_URL}/comments"
-    params = {"post_id": post_id}
-    response = requests.get(url, headers=headers, params=params)
+    response = requests.get(
+        f"{BASE_URL}/comments",
+        headers=get_headers(),
+        params={"post_id": post_id},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
     return response.json()
 
-# Hàm lấy nested comment của một comment
+
 def get_nested_comments(comment_id):
-    url = f"{BASE_URL}/comments/nested"
-    params = {"comment_id": comment_id}
-    response = requests.get(url, headers=headers, params=params)
+    response = requests.get(
+        f"{BASE_URL}/comments/nested",
+        headers=get_headers(),
+        params={"comment_id": comment_id},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
     return response.json()
 
-# Hàm in thông tin chi tiết
-def print_post_details(post_data):
+
+def print_post_details(data):
     print("=== Danh sách bài post ===")
-    for post in post_data.get("results", []):
-        post_id = post.get("post_id", "Không có ID")
-        text = post.get("message", "Không có nội dung")
-        reactions_count = post.get("reactions_count", 0)
-        reactions = post.get("reactions", {})
-        comments_count = post.get("comments_count", 0)
+    for post in data.get("results", []):
         timestamp = post.get("timestamp", 0)
-        post_date = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S") if timestamp else "Không có ngày"
-
-        print(f"\nPost ID: {post_id}")
+        post_date = (
+            datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            if timestamp
+            else "Không có ngày"
+        )
+        print(f"\nPost ID: {post.get('post_id', 'Không có ID')}")
         print(f"Ngày đăng: {post_date}")
-        print(f"Nội dung: {text}")
-        print(f"Số lượng tương tác: {reactions_count}")
-        print(f"Chi tiết tương tác: {reactions}")
-        print(f"Số lượng comment: {comments_count}")
+        print(f"Nội dung: {post.get('message', 'Không có nội dung')}")
+        print(f"Số lượng tương tác: {post.get('reactions_count', 0)}")
+        print(f"Số lượng comment: {post.get('comments_count', 0)}")
 
-        # Lấy comment của post
-        comments_data = get_comments(post_id)
-        print("\n--- Comment ---")
-        for comment in comments_data.get("data", []):
-            comment_id = comment.get("id")
-            comment_text = comment.get("text", "Không có nội dung")
-            comment_reactions = comment.get("reactions", {}).get("total", 0)
-            print(f"Comment ID: {comment_id}")
-            print(f"Nội dung: {comment_text}")
-            print(f"Số lượng tương tác: {comment_reactions}")
-
-            # Lấy nested comment
-            nested_comments_data = get_nested_comments(comment_id)
-            print("   --- Nested Comment ---")
-            for nested_comment in nested_comments_data.get("data", []):
-                nested_comment_id = nested_comment.get("id")
-                nested_comment_text = nested_comment.get("text", "Không có nội dung")
-                nested_comment_reactions = nested_comment.get("reactions", {}).get("total", 0)
-                print(f"   Nested Comment ID: {nested_comment_id}")
-                print(f"   Nội dung: {nested_comment_text}")
-                print(f"   Số lượng tương tác: {nested_comment_reactions}")
 
 def save_data(data, subfolder, tool_name):
-    base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
-    os.makedirs(base_dir, exist_ok=True)
-    now = datetime.now()
-    time_str = now.strftime("%Hh_%M_%d_%m_%Y")
-    filename = f"{tool_name}_{time_str}.json"
-    file_path = os.path.join(base_dir, filename)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    base_dir = Path(__file__).resolve().parent / "data" / subfolder
+    base_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Hh_%M_%d_%m_%Y")
+    file_path = base_dir / f"{tool_name}_{timestamp}.json"
+    file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
-if __name__ == "__main__":
-    # Nhập thông tin từ người dùng
+
+def main():
     profile_id = input("Nhập Profile/Page ID: ").strip()
-    start_date_input = input("Nhập ngày bắt đầu (mm/dd/yyyy, ví dụ: 01/15/2023, để trống nếu không cần): ").strip()
-    end_date_input = input("Nhập ngày kết thúc (mm/dd/yyyy, ví dụ: 12/31/2023, để trống nếu không cần): ").strip()
+    if not profile_id:
+        raise ValueError("Profile/Page ID là bắt buộc")
 
-    # Chuyển đổi định dạng ngày
-    start_date = convert_date(start_date_input) if start_date_input else None
-    end_date = convert_date(end_date_input) if end_date_input else None
+    start_input = input("Ngày bắt đầu (mm/dd/yyyy, có thể để trống): ").strip()
+    end_input = input("Ngày kết thúc (mm/dd/yyyy, có thể để trống): ").strip()
+    start_date = convert_date(start_input) if start_input else None
+    end_date = convert_date(end_input) if end_input else None
 
-    # Chỉ gọi API nếu định dạng ngày hợp lệ (nếu có)
-    if (start_date_input and start_date is None) or (end_date_input and end_date is None):
-        print("Dừng chương trình do lỗi định dạng ngày!")
-    else:
-        print(f"Profile/Page ID: {profile_id}")
-        if start_date:
-            print(f"Ngày bắt đầu: {start_date}")
-        if end_date:
-            print(f"Ngày kết thúc: {end_date}")
+    response = get_profile_posts(profile_id, start_date, end_date)
+    response.raise_for_status()
+    data = response.json()
+    save_data(data, "post_data", "post_data")
+    print_post_details(data)
 
-        # Gọi API để lấy bài post
-        response = get_profile_posts(profile_id, start_date, end_date)
-        print(f"API Status Code: {response.status_code}")
-        print(f"API Response: {response.text}")
 
-        post_data = response.json()
-        if "results" in post_data:
-            save_data(post_data, "post_data", "post_data")
-            # In thông tin chi tiết
-            print_post_details(post_data)
-        else:
-            print("Không thể lấy danh sách bài post. Kiểm tra lại profile_id, ngày nhập, hoặc API response.")
+if __name__ == "__main__":
+    try:
+        main()
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        raise SystemExit(f"Lỗi: {exc}") from exc
