@@ -1,100 +1,73 @@
-import requests
 import json
-import http.client
-import os
 from datetime import datetime
+from pathlib import Path
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
-API_HOST = "facebook-scraper3.p.rapidapi.com"
-BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
+import requests
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
+from _rapidapi import BASE_URL, get_headers
 
-# Hàm kiểm tra và trích xuất post_id (pfbid...) từ URL nếu cần
-def extract_post_info(input_str):
-    if "facebook.com" in input_str:
-        # Nếu là URL, trả về URL để gọi với post_url
-        return {"post_url": input_str}
-    else:
-        # Nếu là pfbid..., trả về post_id
-        return {"post_id": input_str}
+REQUEST_TIMEOUT = 30
 
-# Hàm lấy thông tin chi tiết của bài post
+
+def extract_post_info(value):
+    """Accept either a Facebook post URL or a post identifier."""
+    value = value.strip()
+    if not value:
+        raise ValueError("Post ID hoặc URL là bắt buộc")
+    return {"post_url": value} if "facebook.com" in value else {"post_id": value}
+
+
 def get_post_details(params):
-    url = f"{BASE_URL}/post"
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    return requests.get(
+        f"{BASE_URL}/post",
+        headers=get_headers(),
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+    )
 
-# Hàm in thông tin chi tiết của bài post
-def print_post_details(post_data):
+
+def print_post_details(data):
     print("=== Thông tin bài post ===")
-    post = post_data.get("results", {})
-    post_id = post.get("post_id", "Không có ID")
-    post_type = post.get("type", "Không xác định")
-    url = post.get("url", "Không có URL")
-    message = post.get("message", "Không có nội dung")
-    timestamp = post.get("timestamp", None)
-    comments_count = post.get("comments_count", 0)
-    reactions_count = post.get("reactions_count", 0)
-    reshare_count = post.get("reshare_count", 0)
-    reactions = post.get("reactions", {})
+    post = data.get("results", {})
     author = post.get("author", {})
-    author_name = author.get("name", "Không có tác giả")
-    image = post.get("image", "Không có ảnh")
+    fields = (
+        ("Post ID", post.get("post_id", "Không có ID")),
+        ("Loại bài", post.get("type", "Không xác định")),
+        ("URL", post.get("url", "Không có URL")),
+        ("Nội dung", post.get("message", "Không có nội dung")),
+        ("Thời gian đăng", post.get("timestamp", "Không có thời gian")),
+        ("Số lượng comment", post.get("comments_count", 0)),
+        ("Số lượng tương tác", post.get("reactions_count", 0)),
+        ("Chi tiết tương tác", post.get("reactions", {})),
+        ("Số lượng chia sẻ", post.get("reshare_count", 0)),
+        ("Tác giả", author.get("name", "Không có tác giả")),
+        ("Link ảnh", post.get("image", "Không có ảnh")),
+    )
+    for label, value in fields:
+        print(f"{label}: {value}")
 
-    print(f"Post ID: {post_id}")
-    print(f"Loại bài: {post_type}")
-    print(f"URL: {url}")
-    print(f"Nội dung: {message}")
-    print(f"Thời gian đăng: {timestamp if timestamp else 'Không có thời gian'}")
-    print(f"Số lượng comment: {comments_count}")
-    print(f"Số lượng tương tác: {reactions_count}")
-    print(f"Chi tiết tương tác: {reactions}")
-    print(f"Số lượng chia sẻ: {reshare_count}")
-    print(f"Tác giả: {author_name}")
-    print(f"Link ảnh: {image}")
 
 def save_data(data, subfolder, tool_name):
-    base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
-    os.makedirs(base_dir, exist_ok=True)
-    now = datetime.now()
-    time_str = now.strftime("%Hh_%M_%d_%m_%Y")
-    filename = f"{tool_name}_{time_str}.json"
-    file_path = os.path.join(base_dir, filename)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    base_dir = Path(__file__).resolve().parent / "data" / subfolder
+    base_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Hh_%M_%d_%m_%Y")
+    file_path = base_dir / f"{tool_name}_{timestamp}.json"
+    file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
-if __name__ == "__main__":
+
+def main():
     print("=== Tool Lấy Thông Tin Bài Post ===")
-    
-    # Nhập post_id hoặc URL
-    input_str = input("Nhập Post ID (pfbid...) hoặc URL bài viết: ").strip()
-    if not input_str:
-        print("Post ID hoặc URL là bắt buộc! Dừng chương trình.")
-        exit()
-
-    # Xác định tham số để gọi API
-    params = extract_post_info(input_str)
-    if "post_id" in params:
-        print(f"Post ID: {params['post_id']}")
-    else:
-        print(f"Post URL: {params['post_url']}")
-
-    # Gọi API để lấy thông tin bài post
+    params = extract_post_info(input("Nhập Post ID hoặc URL bài viết: "))
     response = get_post_details(params)
-    print(f"API Status Code: {response.status_code}")
-    print(f"API Response: {response.text}")
+    response.raise_for_status()
+    data = response.json()
+    save_data(data, "post_details", "post_details")
+    print_post_details(data)
 
-    post_data = response.json()
-    if "results" in post_data:
-        save_data(post_data, "post_details", "post_details")
-        # In thông tin bài post
-        print_post_details(post_data)
-    else:
-        print("Không thể lấy thông tin bài post. Kiểm tra lại post_id hoặc URL, hoặc API response.")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        raise SystemExit(f"Lỗi: {exc}") from exc
