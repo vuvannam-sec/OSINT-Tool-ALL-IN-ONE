@@ -1,78 +1,73 @@
-import requests
 import json
-import http.client
-import os
 from datetime import datetime
+from pathlib import Path
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
-API_HOST = "facebook-scraper3.p.rapidapi.com"
-BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
+import requests
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
+from _rapidapi import BASE_URL, get_headers
 
-# Hàm lấy comment của một post
+REQUEST_TIMEOUT = 30
+
+
 def get_comments(post_id=None, cursor=None):
-    url = f"{BASE_URL}/post/comments"
+    """Return comments for a Facebook post or continue from a pagination cursor."""
+    if not post_id and not cursor:
+        raise ValueError("post_id or cursor is required")
+
     params = {}
     if post_id:
         params["post_id"] = post_id
     if cursor:
         params["cursor"] = cursor
-    response = requests.get(url, headers=headers, params=params)
-    return response
 
-# Hàm in thông tin chi tiết của comment
+    return requests.get(
+        f"{BASE_URL}/post/comments",
+        headers=get_headers(),
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+    )
+
+
 def print_comment_details(comment_data):
     print("=== Danh sách comment ===")
     for comment in comment_data.get("results", []):
-        # Sử dụng legacy_comment_id thay vì comment_id để hiển thị
-        comment_id = comment.get("legacy_comment_id", "Không có ID")
-        comment_text = comment.get("message", "Không có nội dung")
-        reactions_count = comment.get("reactions_count", "0")
         author = comment.get("author", {})
-        author_name = author.get("name", "Không có tác giả")
-        print(f"\nComment ID: {comment_id}")
-        print(f"Tác giả: {author_name}")
-        print(f"Nội dung: {comment_text}")
-        print(f"Số lượng tương tác: {reactions_count}")
+        print(f"\nComment ID: {comment.get('legacy_comment_id', 'Không có ID')}")
+        print(f"Tác giả: {author.get('name', 'Không có tác giả')}")
+        print(f"Nội dung: {comment.get('message', 'Không có nội dung')}")
+        print(f"Số lượng tương tác: {comment.get('reactions_count', 0)}")
+
 
 def save_data(data, subfolder, tool_name):
-    base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
-    os.makedirs(base_dir, exist_ok=True)
-    now = datetime.now()
-    time_str = now.strftime("%Hh_%M_%d_%m_%Y")
-    filename = f"{tool_name}_{time_str}.json"
-    file_path = os.path.join(base_dir, filename)
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    base_dir = Path(__file__).resolve().parent / "data" / subfolder
+    base_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Hh_%M_%d_%m_%Y")
+    file_path = base_dir / f"{tool_name}_{timestamp}.json"
+    file_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
-if __name__ == "__main__":
+
+def main():
     print("=== Tool Lấy Comment ===")
-    choice = input("Bạn muốn lấy comment bằng (1) Post ID (pfbid...) hay (2) Cursor? Nhập 1 hoặc 2: ").strip()
-    
+    choice = input("Lấy comment bằng (1) Post ID hoặc (2) Cursor? Nhập 1 hoặc 2: ").strip()
+
     if choice == "1":
-        post_id = input("Nhập Post ID (pfbid..., ví dụ: pfbid02HXLE9XfxtxdVnj9mg25WpUmtR3Kc1rgFNVuvM39rtafB3nZvgySgPkgF6qcTXvLGl): ").strip()
-        response = get_comments(post_id=post_id)
+        value = input("Nhập Post ID: ").strip()
+        response = get_comments(post_id=value)
     elif choice == "2":
-        cursor = input("Nhập Cursor (lấy từ kết quả của /profile/posts hoặc /post/comments): ").strip()
-        response = get_comments(cursor=cursor)
+        value = input("Nhập Cursor: ").strip()
+        response = get_comments(cursor=value)
     else:
-        print("Lựa chọn không hợp lệ! Dừng chương trình.")
-        exit()
+        raise ValueError("Lựa chọn không hợp lệ")
 
-    print(f"API Status Code: {response.status_code}")
-    print(f"API Response: {response.text}")
-
+    response.raise_for_status()
     comment_data = response.json()
-    if "results" in comment_data:
-        save_data(comment_data, "cmt", "cmt")
-        # In thông tin comment
-        print_comment_details(comment_data)
-    else:
-        print("Không thể lấy danh sách comment. Kiểm tra lại post_id, cursor, hoặc API response.")
+    save_data(comment_data, "cmt", "cmt")
+    print_comment_details(comment_data)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        raise SystemExit(f"Lỗi: {exc}") from exc
