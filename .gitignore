@@ -21,17 +21,25 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Runtime/browser state
+cookies.json
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
 # Generated OSINT data
 PROJECT1report/source/new/API/data/
 PROJECT1report/source/new/crawl/metaspy/friends_data_*/
 PROJECT1report/source/new/CrawCheckin/src/data/*.json
+PROJECT1report/source/new/data.js
+PROJECT1report/source/new/data_checkin.js
 
 # Local build/runtime output
 build/
 dist/
 coverage/
 .coverage
-*.log
 
 # Editors and OS files
 .vscode/
