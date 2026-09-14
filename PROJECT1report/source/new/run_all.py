@@ -1,191 +1,200 @@
+import json
+import os
+from pathlib import Path
 import subprocess
 import sys
-import os
 import webbrowser
-import json
-import re
-import time
-import threading
 
-server_proc = None
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def choose_item(items, prompt="Chọn số: "):
+    if not items:
+        return None
+
+    for idx, item in enumerate(items, 1):
+        print(f"{idx}. {item}")
+
+    try:
+        choice = int(input(prompt).strip())
+    except ValueError:
+        print("Lựa chọn phải là một số.")
+        return None
+
+    if not 1 <= choice <= len(items):
+        print("Lựa chọn ngoài phạm vi.")
+        return None
+
+    return items[choice - 1]
+
+
+def run_process(command, cwd=None):
+    """Run a child process without invoking a shell."""
+    working_dir = str(cwd) if cwd else None
+    try:
+        result = subprocess.run(command, cwd=working_dir, check=False)
+    except FileNotFoundError as exc:
+        print(f"Không thể chạy lệnh: {exc}")
+        return 127
+    return result.returncode
+
 
 def run_account_friend_layer():
-    print("Chạy account_friend_layer.py...")
-    # Cho phép nhập uid/username
     username = input("Nhập uid hoặc username: ").strip()
     if not username:
         print("Không được để trống uid/username!")
         return
-    
-    # Chạy main.py với tham số như khi chạy thủ công
-    process = subprocess.Popen(
-        ["python", "main.py", "friend-layer-crawler", username],
-        cwd="crawl/metaspy",
-        shell=True
+
+    metaspy_dir = BASE_DIR / "crawl" / "metaspy"
+    run_process(
+        [sys.executable, "main.py", "friend-layer-crawler", username],
+        cwd=metaspy_dir,
     )
-    # Đợi process hoàn thành
-    process.wait()
+
 
 def run_crawl_profile_data():
-    print("Chạy crawl_profile_data.py...")
-    # Chạy script crawl_profile_data
-    process = subprocess.Popen(
-        ["python", "-m", "src.facebook.account.crawl_profile_data"],
-        cwd="crawl/metaspy",
-        shell=True
+    metaspy_dir = BASE_DIR / "crawl" / "metaspy"
+    run_process(
+        [sys.executable, "-m", "src.facebook.account.crawl_profile_data"],
+        cwd=metaspy_dir,
     )
-    # Đợi process hoàn thành
-    process.wait()
+
 
 def run_api_scripts():
-    api_dir = "API"
-    scripts = [f for f in os.listdir(api_dir) if f.endswith('.py')]
+    api_dir = BASE_DIR / "API"
+    scripts = sorted(path.name for path in api_dir.glob("*.py") if path.name != "__init__.py")
+    if not scripts:
+        print("Không tìm thấy script API nào.")
+        return
+
     print("Chọn script API để chạy:")
-    for idx, script in enumerate(scripts, 1):
-        print(f"{idx}. {script}")
-    choice = int(input("Nhập số: "))
-    script_path = os.path.join(api_dir, scripts[choice-1])
-    
-    # Lưu thư mục hiện tại
-    current_dir = os.getcwd()
-    try:
-        # Chuyển vào thư mục API
-        os.chdir(api_dir)
-        # Chạy script trong thư mục API
-        subprocess.run([sys.executable, scripts[choice-1]])
-    finally:
-        # Quay lại thư mục ban đầu
-        os.chdir(current_dir)
+    script = choose_item(scripts)
+    if not script:
+        return
+
+    run_process([sys.executable, script], cwd=api_dir)
+
 
 def run_network_html():
-    # Lấy danh sách thư mục friends_data_*
-    dirs = [d for d in os.listdir('crawl/metaspy') if d.startswith('friends_data_')]
+    metaspy_dir = BASE_DIR / "crawl" / "metaspy"
+    dirs = sorted(path for path in metaspy_dir.glob("friends_data_*") if path.is_dir())
     if not dirs:
         print("Không tìm thấy thư mục friends_data_*")
         return
+
     print("Chọn thư mục dữ liệu:")
-    for idx, d in enumerate(dirs, 1):
-        print(f"{idx}. {d}")
-    d_idx = int(input("Chọn số: ")) - 1
-    data_dir = os.path.join('crawl/metaspy', dirs[d_idx])
-    files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
+    selected_dir_name = choose_item([path.name for path in dirs])
+    if not selected_dir_name:
+        return
+
+    data_dir = metaspy_dir / selected_dir_name
+    files = sorted(path for path in data_dir.glob("*.json") if path.is_file())
     if not files:
         print("Không có file JSON trong thư mục này!")
         return
+
     print("Chọn file JSON:")
-    for idx, f in enumerate(files, 1):
-        print(f"{idx}. {f}")
-    f_idx = int(input("Chọn số: ")) - 1
-    json_path = os.path.join(data_dir, files[f_idx])
+    selected_file_name = choose_item([path.name for path in files])
+    if not selected_file_name:
+        return
 
-    # Đọc dữ liệu JSON gốc
-    with open(json_path, 'r', encoding='utf-8') as f:
-        raw_data = json.load(f)
+    json_path = data_dir / selected_file_name
+    try:
+        with json_path.open("r", encoding="utf-8") as handle:
+            raw_data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Không thể đọc dữ liệu JSON: {exc}")
+        return
 
-    # CHUẨN HÓA DỮ LIỆU
-    if isinstance(raw_data, dict):
-        if 'tree_data' in raw_data:
-            tree_data = raw_data['tree_data']
-        else:
-            tree_data = raw_data
-    else:
-        tree_data = raw_data
+    tree_data = raw_data.get("tree_data", raw_data) if isinstance(raw_data, dict) else raw_data
+    if not isinstance(tree_data, dict):
+        print("Định dạng dữ liệu không hợp lệ: tree_data phải là object JSON.")
+        return
 
-    # Tạo dữ liệu chuẩn
     normalized_data = {
-        'root_user': tree_data.get('id', ''),
-        'max_layers': 2,  # hoặc lấy từ file nếu có
-        'friends_per_layer': 3,  # hoặc lấy từ file nếu có
-        'crawled_at': '',
-        'total_accounts': 0,
-        'tree_data': tree_data
+        "root_user": tree_data.get("id", ""),
+        "max_layers": raw_data.get("max_layers", 2) if isinstance(raw_data, dict) else 2,
+        "friends_per_layer": raw_data.get("friends_per_layer", 3) if isinstance(raw_data, dict) else 3,
+        "crawled_at": raw_data.get("crawled_at", "") if isinstance(raw_data, dict) else "",
+        "total_accounts": raw_data.get("total_accounts", 0) if isinstance(raw_data, dict) else 0,
+        "tree_data": tree_data,
     }
 
-    # Ghi đè file data.js với định dạng chuẩn
-    with open('data.js', 'w', encoding='utf-8') as f:
-        f.write('const jsonData = ')
-        json.dump(normalized_data, f, ensure_ascii=False, indent=2)
-        f.write(';')
+    output_path = BASE_DIR / "data.js"
+    with output_path.open("w", encoding="utf-8") as handle:
+        handle.write("const jsonData = ")
+        json.dump(normalized_data, handle, ensure_ascii=False, indent=2)
+        handle.write(";")
 
-    print(f'Đã ghi đè data.js từ {json_path}')
-    webbrowser.open('file://' + os.path.abspath('network.html'))
+    print(f"Đã tạo dữ liệu trực quan hóa từ {json_path}")
+    webbrowser.open((BASE_DIR / "network.html").as_uri())
 
-def run_npm_serve():
-    map_dir = os.path.join(os.getcwd(), 'map')
-    index_path = os.path.join(map_dir, 'index.html')
-    
-    if not os.path.exists(index_path):
+
+def run_map_visualization():
+    index_path = BASE_DIR / "map" / "index.html"
+    if not index_path.exists():
         print(f"Không tìm thấy file: {index_path}")
         return
-        
+
     print(f"Đang mở file: {index_path}")
-    webbrowser.open('file://' + os.path.abspath(index_path))
+    webbrowser.open(index_path.as_uri())
+
 
 def run_checkin_crawler():
-    print("Chạy CrawCheckin...")
-    # Chuyển vào thư mục CrawCheckin
-    os.chdir("CrawCheckin")
-    
-    # Chạy npm start
-    process = subprocess.Popen(
-        ["npm", "start"],
-        shell=True
-    )
-    
-    # Đợi process hoàn thành
-    process.wait()
-    
-    # Quay lại thư mục gốc
-    os.chdir("..")
+    crawler_dir = BASE_DIR / "CrawCheckin"
+    package_json = crawler_dir / "package.json"
+    if not package_json.exists():
+        print(f"Không tìm thấy file: {package_json}")
+        return
+
+    run_process(["npm", "start"], cwd=crawler_dir)
+
 
 def run_checkin_visualization():
-    print("Chọn file dữ liệu check-in để hiển thị:")
-    data_dir = os.path.join('CrawCheckin', 'src', 'data')
-    if not os.path.exists(data_dir):
+    data_dir = BASE_DIR / "CrawCheckin" / "src" / "data"
+    if not data_dir.exists():
         print(f"Không tìm thấy thư mục: {data_dir}")
         return
-        
-    files = [f for f in os.listdir(data_dir) if f.endswith('.json')]
+
+    files = sorted(path for path in data_dir.glob("*.json") if path.is_file())
     if not files:
         print("Không có file JSON trong thư mục này!")
         return
-        
-    print("Chọn file JSON:")
-    for idx, f in enumerate(files, 1):
-        print(f"{idx}. {f}")
-    f_idx = int(input("Chọn số: ")) - 1
-    json_path = os.path.join(data_dir, files[f_idx])
 
-    # Đọc dữ liệu JSON
-    with open(json_path, 'r', encoding='utf-8') as f:
-        checkin_data = json.load(f)
+    print("Chọn file dữ liệu check-in để hiển thị:")
+    selected_file_name = choose_item([path.name for path in files])
+    if not selected_file_name:
+        return
 
-    # Ghi đè file data_checkin.js
-    with open('data_checkin.js', 'w', encoding='utf-8') as f:
-        f.write('const jsonData = ')
-        json.dump(checkin_data, f, ensure_ascii=False, indent=2)
-        f.write(';')
+    json_path = data_dir / selected_file_name
+    try:
+        with json_path.open("r", encoding="utf-8") as handle:
+            checkin_data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Không thể đọc dữ liệu JSON: {exc}")
+        return
 
-    print(f'Đã ghi đè data_checkin.js từ {json_path}')
-    webbrowser.open('file://' + os.path.abspath('checkin_routes.html'))
+    output_path = BASE_DIR / "data_checkin.js"
+    with output_path.open("w", encoding="utf-8") as handle:
+        handle.write("const jsonData = ")
+        json.dump(checkin_data, handle, ensure_ascii=False, indent=2)
+        handle.write(";")
 
-def stop_npm_serve(silent=False):
-    global server_proc
-    if server_proc and server_proc.poll() is None:
-        if not silent:
-            print("Đang dừng server...")
-        server_proc.terminate()
-        try:
-            server_proc.wait(timeout=3)
-        except:
-            server_proc.kill()
-        if not silent:
-            print("Đã dừng server.")
-        server_proc = None
-    elif not silent:
-        print("Không có server nào đang chạy.")
+    print(f"Đã tạo dữ liệu trực quan hóa từ {json_path}")
+    webbrowser.open((BASE_DIR / "checkin_routes.html").as_uri())
+
 
 def main():
+    actions = {
+        "1": run_account_friend_layer,
+        "2": run_crawl_profile_data,
+        "3": run_api_scripts,
+        "4": run_network_html,
+        "5": run_map_visualization,
+        "6": run_checkin_crawler,
+        "7": run_checkin_visualization,
+    }
+
     while True:
         print("\n==== OSINT TOOL ====")
         print("1. Crawl danh sách bạn bè")
@@ -196,37 +205,23 @@ def main():
         print("6. Lấy thông tin di chuyển (check-in)")
         print("7. Thống kê lịch trình di chuyển")
         print("0. Thoát")
+
         try:
-            choice = input("Chọn chức năng: ")
-        except KeyboardInterrupt:
+            choice = input("Chọn chức năng: ").strip()
+        except (EOFError, KeyboardInterrupt):
             print("\nĐang thoát tool...")
-            stop_npm_serve(silent=True)
-            sys.exit(0)
-        if choice == "1":
-            run_account_friend_layer()
-        elif choice == "2":
-            run_crawl_profile_data()
-        elif choice == "3":
-            run_api_scripts()
-        elif choice == "4":
-            run_network_html()
-        elif choice == "5":
-            run_npm_serve()
-        elif choice == "6":
-            run_checkin_crawler()
-        elif choice == "7":
-            run_checkin_visualization()
-        elif choice == "0":
-            print("\nĐang thoát tool...")
-            stop_npm_serve(silent=True)
-            break
+            return
+
+        if choice == "0":
+            print("Đang thoát tool...")
+            return
+
+        action = actions.get(choice)
+        if action:
+            action()
         else:
             print("Lựa chọn không hợp lệ!")
 
+
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\nĐang thoát tool...")
-        stop_npm_serve(silent=True)
-        sys.exit(0) 
+    main()

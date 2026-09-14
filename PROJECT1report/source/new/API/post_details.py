@@ -1,35 +1,37 @@
-import requests
 import json
-import http.client
 import os
 from datetime import datetime
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
+import requests
+
 API_HOST = "facebook-scraper3.p.rapidapi.com"
 BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
 
-# Hàm kiểm tra và trích xuất post_id (pfbid...) từ URL nếu cần
+def get_headers():
+    """Build request headers without storing credentials in source control."""
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "RAPIDAPI_KEY is not set. Configure it as an environment variable before running this tool."
+        )
+    return {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": API_HOST,
+    }
+
+
 def extract_post_info(input_str):
     if "facebook.com" in input_str:
-        # Nếu là URL, trả về URL để gọi với post_url
         return {"post_url": input_str}
-    else:
-        # Nếu là pfbid..., trả về post_id
-        return {"post_id": input_str}
+    return {"post_id": input_str}
 
-# Hàm lấy thông tin chi tiết của bài post
+
 def get_post_details(params):
     url = f"{BASE_URL}/post"
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    return requests.get(url, headers=get_headers(), params=params)
 
-# Hàm in thông tin chi tiết của bài post
+
 def print_post_details(post_data):
     print("=== Thông tin bài post ===")
     post = post_data.get("results", {})
@@ -58,6 +60,7 @@ def print_post_details(post_data):
     print(f"Tác giả: {author_name}")
     print(f"Link ảnh: {image}")
 
+
 def save_data(data, subfolder, tool_name):
     base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
     os.makedirs(base_dir, exist_ok=True)
@@ -69,32 +72,27 @@ def save_data(data, subfolder, tool_name):
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
+
 if __name__ == "__main__":
     print("=== Tool Lấy Thông Tin Bài Post ===")
-    
-    # Nhập post_id hoặc URL
-    input_str = input("Nhập Post ID (pfbid...) hoặc URL bài viết: ").strip()
+
+    input_str = input("Nhập Post ID hoặc URL bài viết: ").strip()
     if not input_str:
         print("Post ID hoặc URL là bắt buộc! Dừng chương trình.")
-        exit()
+        raise SystemExit(1)
 
-    # Xác định tham số để gọi API
     params = extract_post_info(input_str)
     if "post_id" in params:
         print(f"Post ID: {params['post_id']}")
     else:
         print(f"Post URL: {params['post_url']}")
 
-    # Gọi API để lấy thông tin bài post
     response = get_post_details(params)
     print(f"API Status Code: {response.status_code}")
-    print(f"API Response: {response.text}")
 
     post_data = response.json()
     if "results" in post_data:
         save_data(post_data, "post_details", "post_details")
-        # In thông tin bài post
         print_post_details(post_data)
     else:
         print("Không thể lấy thông tin bài post. Kiểm tra lại post_id hoặc URL, hoặc API response.")

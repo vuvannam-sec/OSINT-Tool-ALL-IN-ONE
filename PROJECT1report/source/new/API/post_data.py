@@ -1,20 +1,26 @@
-import requests
 import json
-import http.client
-from datetime import datetime
 import os
+from datetime import datetime
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
+import requests
+
 API_HOST = "facebook-scraper3.p.rapidapi.com"
 BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
 
-# Hàm chuyển định dạng ngày từ mm/dd/yyyy sang yyyy-mm-dd
+def get_headers():
+    """Build request headers without storing credentials in source control."""
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "RAPIDAPI_KEY is not set. Configure it as an environment variable before running this tool."
+        )
+    return {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": API_HOST,
+    }
+
+
 def convert_date(date_str):
     try:
         date_obj = datetime.strptime(date_str, "%m/%d/%Y")
@@ -23,7 +29,7 @@ def convert_date(date_str):
         print("Định dạng ngày không hợp lệ! Vui lòng nhập theo định dạng mm/dd/yyyy (ví dụ: 01/15/2023).")
         return None
 
-# Hàm lấy danh sách bài post từ một profile hoặc page
+
 def get_profile_posts(profile_id, start_date=None, end_date=None):
     url = f"{BASE_URL}/profile/posts"
     params = {"profile_id": profile_id}
@@ -31,24 +37,23 @@ def get_profile_posts(profile_id, start_date=None, end_date=None):
         params["start_date"] = start_date
     if end_date:
         params["end_date"] = end_date
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    return requests.get(url, headers=get_headers(), params=params)
 
-# Hàm lấy comment của một post
+
 def get_comments(post_id):
     url = f"{BASE_URL}/comments"
     params = {"post_id": post_id}
-    response = requests.get(url, headers=headers, params=params)
+    response = requests.get(url, headers=get_headers(), params=params)
     return response.json()
 
-# Hàm lấy nested comment của một comment
+
 def get_nested_comments(comment_id):
     url = f"{BASE_URL}/comments/nested"
     params = {"comment_id": comment_id}
-    response = requests.get(url, headers=headers, params=params)
+    response = requests.get(url, headers=get_headers(), params=params)
     return response.json()
 
-# Hàm in thông tin chi tiết
+
 def print_post_details(post_data):
     print("=== Danh sách bài post ===")
     for post in post_data.get("results", []):
@@ -67,7 +72,6 @@ def print_post_details(post_data):
         print(f"Chi tiết tương tác: {reactions}")
         print(f"Số lượng comment: {comments_count}")
 
-        # Lấy comment của post
         comments_data = get_comments(post_id)
         print("\n--- Comment ---")
         for comment in comments_data.get("data", []):
@@ -78,7 +82,6 @@ def print_post_details(post_data):
             print(f"Nội dung: {comment_text}")
             print(f"Số lượng tương tác: {comment_reactions}")
 
-            # Lấy nested comment
             nested_comments_data = get_nested_comments(comment_id)
             print("   --- Nested Comment ---")
             for nested_comment in nested_comments_data.get("data", []):
@@ -88,6 +91,7 @@ def print_post_details(post_data):
                 print(f"   Nested Comment ID: {nested_comment_id}")
                 print(f"   Nội dung: {nested_comment_text}")
                 print(f"   Số lượng tương tác: {nested_comment_reactions}")
+
 
 def save_data(data, subfolder, tool_name):
     base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
@@ -100,18 +104,15 @@ def save_data(data, subfolder, tool_name):
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
-if __name__ == "__main__":
-    # Nhập thông tin từ người dùng
-    profile_id = input("Nhập Profile/Page ID: ").strip()
-    start_date_input = input("Nhập ngày bắt đầu (mm/dd/yyyy, ví dụ: 01/15/2023, để trống nếu không cần): ").strip()
-    end_date_input = input("Nhập ngày kết thúc (mm/dd/yyyy, ví dụ: 12/31/2023, để trống nếu không cần): ").strip()
 
-    # Chuyển đổi định dạng ngày
+if __name__ == "__main__":
+    profile_id = input("Nhập Profile/Page ID: ").strip()
+    start_date_input = input("Nhập ngày bắt đầu (mm/dd/yyyy, để trống nếu không cần): ").strip()
+    end_date_input = input("Nhập ngày kết thúc (mm/dd/yyyy, để trống nếu không cần): ").strip()
+
     start_date = convert_date(start_date_input) if start_date_input else None
     end_date = convert_date(end_date_input) if end_date_input else None
 
-    # Chỉ gọi API nếu định dạng ngày hợp lệ (nếu có)
     if (start_date_input and start_date is None) or (end_date_input and end_date is None):
         print("Dừng chương trình do lỗi định dạng ngày!")
     else:
@@ -121,15 +122,12 @@ if __name__ == "__main__":
         if end_date:
             print(f"Ngày kết thúc: {end_date}")
 
-        # Gọi API để lấy bài post
         response = get_profile_posts(profile_id, start_date, end_date)
         print(f"API Status Code: {response.status_code}")
-        print(f"API Response: {response.text}")
 
         post_data = response.json()
         if "results" in post_data:
             save_data(post_data, "post_data", "post_data")
-            # In thông tin chi tiết
             print_post_details(post_data)
         else:
             print("Không thể lấy danh sách bài post. Kiểm tra lại profile_id, ngày nhập, hoặc API response.")

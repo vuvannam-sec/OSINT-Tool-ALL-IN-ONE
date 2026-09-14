@@ -1,0 +1,62 @@
+name: Quality checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Reject tracked runtime secrets and state
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden="$(git ls-files | grep -E '(^|/)\.env$|(^|/)cookies\.json$|\.(db|sqlite|sqlite3)$' || true)"
+          if [ -n "$forbidden" ]; then
+            echo "Tracked runtime/credential files are not allowed:"
+            echo "$forbidden"
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile Python sources
+        run: |
+          python -m compileall -q \
+            PROJECT1report/source/new/API \
+            PROJECT1report/source/new/crawl/metaspy/src \
+            PROJECT1report/source/new/run_all.py \
+            PROJECT1report/source/new/api_server.py
+
+  web-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: PROJECT1report/web-tool
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: PROJECT1report/web-tool/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build

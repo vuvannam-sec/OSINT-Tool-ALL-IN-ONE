@@ -1,31 +1,36 @@
-import requests
 import json
-import http.client
 import os
 from datetime import datetime
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
+import requests
+
 API_HOST = "facebook-scraper3.p.rapidapi.com"
 BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
 
-# Hàm lấy nested comment của một comment
+def get_headers():
+    """Build request headers without storing credentials in source control."""
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "RAPIDAPI_KEY is not set. Configure it as an environment variable before running this tool."
+        )
+    return {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": API_HOST,
+    }
+
+
 def get_nested_comments(post_id, comment_id, expansion_token):
     url = f"{BASE_URL}/post/comments_nested"
     params = {
-        "post_id": post_id,  # Dạng số
-        "comment_id": comment_id,  # Dạng số (legacy_comment_id)
-        "expansion_token": expansion_token
+        "post_id": post_id,
+        "comment_id": comment_id,
+        "expansion_token": expansion_token,
     }
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    return requests.get(url, headers=get_headers(), params=params)
 
-# Hàm in thông tin chi tiết của nested comment
+
 def print_nested_comment_details(nested_comment_data):
     print("=== Danh sách nested comment ===")
     for comment in nested_comment_data.get("results", []):
@@ -41,6 +46,7 @@ def print_nested_comment_details(nested_comment_data):
         print(f"Nội dung: {comment_text}")
         print(f"Số lượng tương tác: {reactions_count}")
 
+
 def save_data(data, subfolder, tool_name):
     base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
     os.makedirs(base_dir, exist_ok=True)
@@ -52,35 +58,31 @@ def save_data(data, subfolder, tool_name):
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
+
 if __name__ == "__main__":
     print("=== Tool Lấy Nested Comment ===")
-    
-    # Nhập 3 tham số bắt buộc
-    post_id = input("Nhập Post ID (dạng số, ví dụ: 2159964654418794): ").strip()
+
+    post_id = input("Nhập Post ID: ").strip()
     if not post_id:
         print("Post ID là bắt buộc! Dừng chương trình.")
-        exit()
+        raise SystemExit(1)
 
-    comment_id = input("Nhập Comment ID (dạng số, ví dụ: 1408532983485285): ").strip()
+    comment_id = input("Nhập Comment ID: ").strip()
     if not comment_id:
         print("Comment ID là bắt buộc! Dừng chương trình.")
-        exit()
+        raise SystemExit(1)
 
-    expansion_token = input("Nhập Expansion Token (lấy từ /post/comments): ").strip()
+    expansion_token = input("Nhập Expansion Token: ").strip()
     if not expansion_token:
         print("Expansion Token là bắt buộc! Dừng chương trình.")
-        exit()
+        raise SystemExit(1)
 
-    # Gọi API để lấy nested comment
     response = get_nested_comments(post_id, comment_id, expansion_token)
     print(f"API Status Code: {response.status_code}")
-    print(f"API Response: {response.text}")
 
     nested_comment_data = response.json()
     if "results" in nested_comment_data:
         save_data(nested_comment_data, "nested_cmt", "nested_cmt")
-        # In thông tin nested comment
         print_nested_comment_details(nested_comment_data)
     else:
-        print("Không thể lấy danh sách nested comment. Kiểm tra lại post_id, comment_id, expansion_token, hoặc API response.")
+        print("Không thể lấy danh sách nested comment. Kiểm tra lại tham số hoặc API response.")

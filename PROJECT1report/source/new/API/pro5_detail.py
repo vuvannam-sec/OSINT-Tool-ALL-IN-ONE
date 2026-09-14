@@ -1,36 +1,40 @@
-import requests
 import json
-import http.client
 import os
 from datetime import datetime
 
-# Cấu hình API
-API_KEY = "e8d3149b81mshcf22e53e1ed5dddp1c125cjsna542e41b57e0"
+import requests
+
 API_HOST = "facebook-scraper3.p.rapidapi.com"
 BASE_URL = "https://facebook-scraper3.p.rapidapi.com"
 
-headers = {
-    "X-RapidAPI-Key": API_KEY,
-    "X-RapidAPI-Host": API_HOST
-}
 
-# Hàm tạo URL đầy đủ từ username hoặc UID
+def get_headers():
+    """Build request headers without storing credentials in source control."""
+    api_key = os.getenv("RAPIDAPI_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "RAPIDAPI_KEY is not set. Configure it as an environment variable before running this tool."
+        )
+    return {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": API_HOST,
+    }
+
+
 def create_profile_url(input_str):
     return f"https://www.facebook.com/{input_str}/"
 
-# Hàm lấy thông tin chi tiết của profile
+
 def get_profile_details(profile_url):
     url = f"{BASE_URL}/profile/details_url"
     params = {"url": profile_url}
-    response = requests.get(url, headers=headers, params=params)
-    return response
+    return requests.get(url, headers=get_headers(), params=params)
 
-# Hàm in thông tin chi tiết của profile
+
 def print_profile_details(profile_data):
     print("=== Thông tin profile ===")
     profile = profile_data.get("profile", {})
-    
-    # Kiểm tra trường hợp profile private
+
     if profile.get("type") == "private_profile":
         print("Profile này là private, không có thông tin chi tiết để hiển thị.")
         return
@@ -53,9 +57,8 @@ def print_profile_details(profile_data):
     print(f"Giới tính: {gender}")
     print("\nThông tin bổ sung:")
 
-    # Xử lý trường about linh hoạt
     if isinstance(about, dict):
-        for key, value in about.items():
+        for value in about.values():
             if isinstance(value, dict):
                 text = value.get("text", "Không có thông tin")
             elif isinstance(value, str):
@@ -76,6 +79,7 @@ def print_profile_details(profile_data):
     else:
         print("- Không có thông tin bổ sung.")
 
+
 def save_data(data, subfolder, tool_name):
     base_dir = os.path.join(os.path.dirname(__file__), "data", subfolder)
     os.makedirs(base_dir, exist_ok=True)
@@ -87,29 +91,24 @@ def save_data(data, subfolder, tool_name):
         json.dump(data, f, ensure_ascii=False, indent=2)
     print(f"Đã lưu dữ liệu vào {file_path}")
 
-# Thực thi
+
 if __name__ == "__main__":
     print("=== Tool Lấy Thông Tin Profile ===")
-    
-    # Nhập username hoặc UID
-    input_str = input("Nhập Username hoặc UID (ví dụ: sonnopro123 hoặc 100012158418273): ").strip()
+
+    input_str = input("Nhập Username hoặc UID: ").strip()
     if not input_str:
         print("Username hoặc UID là bắt buộc! Dừng chương trình.")
-        exit()
+        raise SystemExit(1)
 
-    # Tạo URL đầy đủ
     profile_url = create_profile_url(input_str)
     print(f"Profile URL: {profile_url}")
 
-    # Gọi API để lấy thông tin profile
     response = get_profile_details(profile_url)
     print(f"API Status Code: {response.status_code}")
-    print(f"API Response: {response.text}")
 
     profile_data = response.json()
     if "profile" in profile_data:
         save_data(profile_data, "profile_details", "profile_details")
-        # In thông tin profile
         print_profile_details(profile_data)
     else:
         print("Không thể lấy thông tin profile. Kiểm tra lại username/UID hoặc API response.")
