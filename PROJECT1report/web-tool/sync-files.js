@@ -2,108 +2,80 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Get current directory for ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Paths
-const backendPath = path.join(__dirname, '../hyvongcuoicung/new2');
-const publicPath = path.join(__dirname, './public/hyvongcuoicung/new2');
+const backendPath = path.resolve(__dirname, '../source/new');
+const publicPath = path.resolve(__dirname, 'public/osint-assets');
+const generatedFiles = ['data.js', 'data_checkin.js'];
+const staticFiles = ['network.html', 'checkin_routes.html'];
 
-// Ensure public directory exists
-if (!fs.existsSync(publicPath)) {
-  fs.mkdirSync(publicPath, { recursive: true });
+function ensureDirectory(directory) {
+  fs.mkdirSync(directory, { recursive: true });
 }
 
-// Function to copy file
-function copyFile(filename) {
-  const sourcePath = path.join(backendPath, filename);
-  const targetPath = path.join(publicPath, filename);
-  
-  // Ensure target directory exists
-  const targetDir = path.dirname(targetPath);
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
-  }
-  
-  if (fs.existsSync(sourcePath)) {
-    fs.copyFileSync(sourcePath, targetPath);
-    console.log(`✅ Copied ${filename} to public directory`);
-  } else {
-    console.log(`⚠️  Source file ${filename} not found`);
-  }
+function copyFile(relativePath) {
+  const sourcePath = path.join(backendPath, relativePath);
+  const targetPath = path.join(publicPath, relativePath);
+
+  if (!fs.existsSync(sourcePath)) return false;
+
+  ensureDirectory(path.dirname(targetPath));
+  fs.copyFileSync(sourcePath, targetPath);
+  return true;
 }
 
-// Function to sync entire directory
-function syncDirectory(sourceDir, targetDir) {
-  if (!fs.existsSync(sourceDir)) {
-    console.log(`⚠️  Source directory ${sourceDir} not found`);
-    return;
-  }
+function syncDirectory(relativePath) {
+  const sourceDir = path.join(backendPath, relativePath);
+  const targetDir = path.join(publicPath, relativePath);
 
-  // Ensure target directory exists
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
-  }
+  if (!fs.existsSync(sourceDir)) return;
 
-  const files = fs.readdirSync(sourceDir);
-  files.forEach(file => {
-    const sourcePath = path.join(sourceDir, file);
-    const targetPath = path.join(targetDir, file);
-    
-    if (fs.statSync(sourcePath).isFile()) {
-      fs.copyFileSync(sourcePath, targetPath);
-      console.log(`✅ Synced ${file} to public directory`);
+  ensureDirectory(targetDir);
+  fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
+}
+
+function watchFile(relativePath) {
+  const sourcePath = path.join(backendPath, relativePath);
+  if (!fs.existsSync(sourcePath)) return;
+
+  fs.watchFile(sourcePath, { interval: 500 }, (current, previous) => {
+    if (current.mtimeMs !== previous.mtimeMs) {
+      copyFile(relativePath);
     }
   });
 }
 
-// Watch for file changes
-const filesToWatch = ['data.js', 'data_checkin.js'];
+ensureDirectory(publicPath);
 
-filesToWatch.forEach(filename => {
-  const filePath = path.join(backendPath, filename);
-  
-  // Initial copy
-  copyFile(filename);
-  
-  // Watch for changes
-  if (fs.existsSync(filePath)) {
-    fs.watchFile(filePath, (curr, prev) => {
-      if (curr.mtime !== prev.mtime) {
-        console.log(`🔄 ${filename} changed, copying...`);
-        setTimeout(() => copyFile(filename), 100); // Small delay to ensure file write is complete
-      }
-    });
-    console.log(`👁️  Watching ${filename} for changes...`);
-  }
+staticFiles.forEach(copyFile);
+syncDirectory('map');
+
+// Generated crawl data is copied only when it exists locally. These files are
+// intentionally ignored by Git and should never be committed to the repository.
+generatedFiles.forEach((file) => {
+  copyFile(file);
+  watchFile(file);
 });
 
-// Sync CrawCheckin data directory
-const crawlCheckinDataPath = path.join(backendPath, 'CrawCheckin/src/data');
-const publicCrawlCheckinDataPath = path.join(publicPath, 'CrawCheckin/src/data');
+const crawlDataRelativePath = 'CrawCheckin/src/data';
+const crawlDataPath = path.join(backendPath, crawlDataRelativePath);
+syncDirectory(crawlDataRelativePath);
 
-// Initial sync
-console.log('🔄 Initial sync of CrawCheckin data directory...');
-syncDirectory(crawlCheckinDataPath, publicCrawlCheckinDataPath);
-
-// Watch CrawCheckin data directory for changes
-if (fs.existsSync(crawlCheckinDataPath)) {
-  fs.watch(crawlCheckinDataPath, (eventType, filename) => {
-    if (filename && filename.endsWith('.json')) {
-      console.log(`🔄 CrawCheckin data file ${filename} changed, syncing...`);
-      setTimeout(() => {
-        syncDirectory(crawlCheckinDataPath, publicCrawlCheckinDataPath);
-      }, 100);
+if (fs.existsSync(crawlDataPath)) {
+  fs.watch(crawlDataPath, { recursive: false }, (_eventType, filename) => {
+    if (filename?.endsWith('.json')) {
+      syncDirectory(crawlDataRelativePath);
     }
   });
-  console.log(`👁️  Watching CrawCheckin/src/data directory for changes...`);
 }
 
-console.log('🚀 File sync watcher started. Press Ctrl+C to stop.');
+console.log(`OSINT assets synced to ${publicPath}`);
+console.log('Watching generated crawl data. Press Ctrl+C to stop.');
 
-// Keep the script running
 process.on('SIGINT', () => {
-  console.log('\n🛑 File sync watcher stopped.');
+  generatedFiles.forEach((file) => {
+    fs.unwatchFile(path.join(backendPath, file));
+  });
   process.exit(0);
-}); 
+});
