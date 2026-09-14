@@ -1,2 +1,41 @@
-web-tool/node_modules/
-web-tool/node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+config.env
+cookies.json
+**/cookies.json
+*.pem
+*.key
+
+# Runtime state and generated data
+*.log
+*.db
+*.sqlite
+*.sqlite3
+PROJECT1report/source/new/API/data/
+PROJECT1report/source/new/CrawCheckin/src/data/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
