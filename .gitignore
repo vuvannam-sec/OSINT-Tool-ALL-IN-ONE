@@ -31,8 +31,11 @@ cookies.json
 *.db
 *.sqlite
 *.sqlite3
+PROJECT1report/source/new/data.js
+PROJECT1report/source/new/data_checkin.js
 PROJECT1report/source/new/API/data/
 PROJECT1report/source/new/CrawCheckin/src/data/
+PROJECT1report/web-tool/public/osint-assets/
 
 # OS / editors
 .DS_Store
